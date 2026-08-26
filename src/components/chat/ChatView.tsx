@@ -69,12 +69,19 @@ async function readSSEStream(
     if (!payload || payload === "[DONE]") return;
 
     try {
-      const parsed = JSON.parse(payload) as { delta?: string; error?: string };
+      const parsed = JSON.parse(payload) as {
+        delta?: string;
+        text?: string;
+        error?: string;
+      };
       if (parsed.error) {
         streamError = parsed.error;
-      } else if (parsed.delta) {
-        accumulated += parsed.delta;
-        onDelta(accumulated);
+      } else {
+        const token = parsed.text ?? parsed.delta ?? "";
+        if (token) {
+          accumulated += token;
+          onDelta(accumulated);
+        }
       }
     } catch {
       // skip
