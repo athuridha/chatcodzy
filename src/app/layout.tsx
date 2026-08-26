@@ -16,9 +16,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: `${APP_NAME} — Asisten AI dengan Memori Permanen`,
+  title: `${APP_NAME} — Asisten AI Cerdas`,
   description:
-    "Chatbot AI percakapan dengan memori jangka panjang. Ditenagai OpenRouter.",
+    "Asisten AI cerdas dan intuitif untuk percakapan, analisis dokumen, coding, dan pembuatan gambar.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
