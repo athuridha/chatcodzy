@@ -1,10 +1,24 @@
 import { SYSTEM_PROMPT } from "./prompts";
 import { truncateHistoryFIFO } from "@/lib/utils/truncate";
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? "";
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "stealth/ox-alpha";
-const OPENROUTER_BASE_URL =
-  process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
+function getOpenRouterApiKey(): string {
+  const key = process.env.OPENROUTER_API_KEY?.trim();
+  if (!key) {
+    throw new OpenRouterError(
+      "OPENROUTER_API_KEY belum dikonfigurasi di Environment Variables.",
+      500
+    );
+  }
+  return key;
+}
+
+function getOpenRouterModel(): string {
+  return process.env.OPENROUTER_MODEL?.trim() || "stealth/ox-alpha";
+}
+
+function getOpenRouterBaseUrl(): string {
+  return process.env.OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api/v1";
+}
 
 export type MessageContentPart =
   | { type: "text"; text: string }
@@ -37,7 +51,6 @@ export function buildMessages(history: OpenRouterMessage[]): OpenRouterMessage[]
 }
 
 const VISION_MODEL = "minimax/minimax-m3:free";
-const TEXT_MODEL = process.env.OPENROUTER_MODEL || "stealth/ox-alpha";
 
 function hasImages(messages: OpenRouterMessage[]): boolean {
   return messages.some((m) => {
@@ -52,15 +65,18 @@ async function callOpenRouter(
   messages: OpenRouterMessage[],
   overrideModel?: string
 ): Promise<Response> {
-  const chosenModel = overrideModel || (hasImages(messages) ? VISION_MODEL : TEXT_MODEL);
+  const apiKey = getOpenRouterApiKey();
+  const textModel = getOpenRouterModel();
+  const baseUrl = getOpenRouterBaseUrl();
+  const chosenModel = overrideModel || (hasImages(messages) ? VISION_MODEL : textModel);
 
-  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "HTTP-Referer":
-        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+        process.env.NEXT_PUBLIC_APP_URL || "https://chatcodzy.vercel.app",
       "X-Title": process.env.NEXT_PUBLIC_APP_NAME || "Chat Codzy",
     },
     body: JSON.stringify({
@@ -111,7 +127,8 @@ async function callOpenRouterWithRetry(
 
 /**
  * Stream chat completion dari OpenRouter.
- * Full History Injection + fallback FIFO sekali jika context length exceeded.
+ * Otomatis inject SYSTEM_PROMPT.
+ * Jika konteks kepenuhan (error 400 context length), otomatis FIFO truncate lalu retry sekali.
  */
 export async function streamChatCompletion(
   history: OpenRouterMessage[]
@@ -123,95 +140,92 @@ export async function streamChatCompletion(
     upstream = await callOpenRouterWithRetry(fullMessages);
   } catch (err) {
     if (err instanceof OpenRouterError && err.isContextLength) {
-      console.warn("Context length exceeded, truncating history (FIFO)...");
-      const truncated = truncateHistoryFIFO(fullMessages, 20);
+      // FIFO Truncation fallback: pangkas pesan tertua dan coba lagi
+      const truncated = buildMessages(truncateHistoryFIFO(history, 8));
       upstream = await callOpenRouterWithRetry(truncated);
     } else {
       throw err;
     }
   }
 
-  return upstream.body as ReadableStream<Uint8Array>;
+  return upstream.body!;
 }
 
 /**
  * Parse SSE dari OpenRouter menjadi SSE sederhana untuk client:
- *   data: {"delta":"..."}\n\n  → potongan teks
- *   data: {"done":true}\n\n    → selesai
- *   data: {"error":"..."}\n\n  → gagal
+ * `data: {"text": "chunk"}\n\n`
+ * `data: [DONE]\n\n`
  */
 export function transformOpenRouterStream(
-  input: ReadableStream<Uint8Array>
+  rawStream: ReadableStream<Uint8Array>
 ): ReadableStream<Uint8Array> {
-  const reader = input.getReader();
-  const decoder = new TextDecoder();
+  const reader = rawStream.getReader();
   const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let buffer = "";
 
   return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      let buffer = "";
+    async pull(controller) {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          return;
+        }
 
-      const enqueueLine = (line: string): void => {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) return;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
-        const data = trimmed.slice(5).trim();
-        if (!data || data === "[DONE]") return;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data:")) continue;
 
-        try {
-          const parsed = JSON.parse(data) as {
-            choices?: Array<{ delta?: { content?: string | null } }>;
-            error?: { message?: string } | string;
-          };
-
-          if (parsed.error) {
-            const message =
-              typeof parsed.error === "string"
-                ? parsed.error
-                : parsed.error.message ?? "OpenRouter error";
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ error: message })}\n\n`)
-            );
+          const dataStr = trimmed.slice(5).trim();
+          if (dataStr === "[DONE]") {
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
             return;
           }
 
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`)
-            );
+          try {
+            const parsed = JSON.parse(dataStr) as {
+              choices?: Array<{
+                delta?: { content?: string };
+                finish_reason?: string | null;
+              }>;
+              error?: { message?: string };
+            };
+
+            if (parsed.error) {
+              const errMsg =
+                typeof parsed.error === "string"
+                  ? parsed.error
+                  : parsed.error.message ?? "OpenRouter error";
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ error: errMsg })}\n\n`
+                )
+              );
+              controller.close();
+              return;
+            }
+
+            const token = parsed.choices?.[0]?.delta?.content;
+            if (token) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ text: token })}\n\n`)
+              );
+            }
+          } catch {
+            // Abaikan chunk non-JSON (keep-alive ping dll)
           }
-        } catch {
-          // skip malformed chunk
         }
-      };
-
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) enqueueLine(line);
-        }
-
-        if (buffer.trim()) enqueueLine(buffer);
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Stream failed";
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ error: message })}\n\n`)
-        );
-      } finally {
-        controller.close();
-        reader.releaseLock();
       }
     },
     cancel() {
-      void reader.cancel().catch(() => undefined);
+      void reader.cancel();
     },
   });
 }
