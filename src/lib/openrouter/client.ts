@@ -2,10 +2,12 @@ import { SYSTEM_PROMPT } from "./prompts";
 import { truncateHistoryFIFO } from "@/lib/utils/truncate";
 
 function getOpenRouterApiKey(): string {
-  const key = process.env.OPENROUTER_API_KEY?.trim();
+  const key =
+    process.env.OPENROUTER_API_KEY?.trim() ||
+    process.env.NEXT_PUBLIC_OPENROUTER_API_KEY?.trim();
   if (!key) {
     throw new OpenRouterError(
-      "OPENROUTER_API_KEY belum dikonfigurasi di Environment Variables.",
+      "OPENROUTER_API_KEY belum dikonfigurasi di Environment Variables Vercel.",
       500
     );
   }

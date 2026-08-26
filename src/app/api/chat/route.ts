@@ -9,7 +9,6 @@ import {
 } from "@/lib/openrouter/client";
 import { verifyFirebaseIdToken } from "@/lib/firebase/token";
 
-export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 interface ChatRequestBody {
