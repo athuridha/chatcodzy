@@ -4,7 +4,7 @@ import { memo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { Check, Copy, Terminal } from "lucide-react";
+import { Check, Copy, Terminal, Download, Maximize2, X, Loader2 } from "lucide-react";
 import "highlight.js/styles/github-dark.css";
 
 import { useToast } from "@/contexts/ToastContext";
@@ -85,7 +85,93 @@ function CodeBlockHeader({
   );
 }
 
-/** Render markdown aman dengan syntax highlighting dan copy code button yang rapi. */
+function GeneratedImageCard({ src, alt }: { src?: string; alt?: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  if (!src) return null;
+
+  return (
+    <div className="my-4 max-w-md rounded-2xl border border-border/80 bg-card overflow-hidden shadow-lg group relative">
+      <div className="relative aspect-square w-full bg-muted/40 flex items-center justify-center overflow-hidden">
+        {!loaded && !error && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/30 animate-pulse">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Menghasilkan gambar AI...</span>
+          </div>
+        )}
+
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt || "Gambar AI"}
+          onLoad={() => setLoaded(true)}
+          onError={() => setError(true)}
+          onClick={() => setModalOpen(true)}
+          className={cn(
+            "w-full h-full object-cover cursor-pointer transition-all duration-300 group-hover:scale-102",
+            loaded ? "opacity-100" : "opacity-0"
+          )}
+        />
+
+        {/* Hover Action Overlay */}
+        {loaded && (
+          <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 backdrop-blur-md rounded-xl p-1 shadow-md">
+            <a
+              href={src}
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+              title="Buka / Unduh Gambar"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-white hover:bg-white/20 transition-colors"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </a>
+            <button
+              onClick={() => setModalOpen(true)}
+              title="Perbesar"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-white hover:bg-white/20 transition-colors"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {alt && (
+        <div className="p-2.5 px-3 border-t border-border/60 bg-background/50">
+          <p className="text-[11px] text-muted-foreground truncate">{alt}</p>
+        </div>
+      )}
+
+      {/* Fullscreen Zoom Modal */}
+      {modalOpen && (
+        <div
+          onClick={() => setModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-md animate-fade-in"
+        >
+          <div className="relative max-w-4xl max-h-[90vh] w-full flex flex-col items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt={alt || "Gambar AI"}
+              className="max-h-[85vh] max-w-full rounded-2xl object-contain shadow-2xl border border-white/10"
+            />
+            <button
+              onClick={() => setModalOpen(false)}
+              className="absolute top-2 right-2 flex h-9 w-9 items-center justify-center rounded-full bg-black/70 text-white hover:bg-white/20 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Render markdown aman dengan syntax highlighting, copy code button, dan AI image card preview. */
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   content,
 }: MarkdownRendererProps): React.JSX.Element {
@@ -139,6 +225,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
                 {children}
               </CodeBlockHeader>
             );
+          },
+          img({ src, alt }: { src?: string; alt?: string }) {
+            return <GeneratedImageCard src={src} alt={alt} />;
           },
         }}
       >
