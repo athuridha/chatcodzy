@@ -89,8 +89,43 @@ function GeneratedImageCard({ src, alt }: { src?: string; alt?: string }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const { toast } = useToast();
 
   if (!src) return null;
+
+  // Direct instant download without navigating to third party website
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (downloading) return;
+
+    setDownloading(true);
+    toast("info", "Sedang mengunduh gambar...");
+
+    try {
+      const response = await fetch(src);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `codzy-ai-${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+      toast("success", "Gambar berhasil disimpan ke perangkat.");
+    } catch {
+      // Fallback
+      const a = document.createElement("a");
+      a.href = src;
+      a.download = `codzy-ai-${Date.now()}.jpg`;
+      a.target = "_blank";
+      a.click();
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="my-4 max-w-md rounded-2xl border border-border/80 bg-card overflow-hidden shadow-lg group relative">
@@ -118,17 +153,21 @@ function GeneratedImageCard({ src, alt }: { src?: string; alt?: string }) {
         {/* Hover Action Overlay */}
         {loaded && (
           <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 backdrop-blur-md rounded-xl p-1 shadow-md">
-            <a
-              href={src}
-              target="_blank"
-              rel="noopener noreferrer"
-              download
-              title="Buka / Unduh Gambar"
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={downloading}
+              title="Unduh Gambar Langsung"
               className="flex h-7 w-7 items-center justify-center rounded-lg text-white hover:bg-white/20 transition-colors"
             >
-              <Download className="h-3.5 w-3.5" />
-            </a>
+              {downloading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+            </button>
             <button
+              type="button"
               onClick={() => setModalOpen(true)}
               title="Perbesar"
               className="flex h-7 w-7 items-center justify-center rounded-lg text-white hover:bg-white/20 transition-colors"
@@ -178,7 +217,7 @@ function preprocessMarkdownForImages(rawText: string): string {
   let processed = rawText;
 
   // 1. Hide partial/incomplete markdown image tag during streaming
-  const incompleteImageMatch = /!\[([^\]]*)\]\((https:\/\/image\.pollinations\.ai[^\s\)]*)$/;
+  const incompleteImageMatch = /!\[([^\]]*)\]\(((\/api\/image|https:\/\/image\.pollinations\.ai)[^\s\)]*)$/;
   if (incompleteImageMatch.test(processed)) {
     processed = processed.replace(
       incompleteImageMatch,
@@ -192,8 +231,14 @@ function preprocessMarkdownForImages(rawText: string): string {
     processed = processed.replace(partialTagMatch, "\n\n*(Sedang memproses gambar AI...)*\n\n");
   }
 
-  // 3. Convert any raw Pollinations URL to image markdown
-  const rawUrlRegex = /(?<![\(\[])https:\/\/image\.pollinations\.ai\/prompt\/[^\s\)]+/g;
+  // 3. Rewrite any raw pollinations URL into internal /api/image endpoint
+  const pollinationsRegex = /https:\/\/image\.pollinations\.ai\/prompt\/([^?\s\)]+)(\?[^\s\)]*)?/g;
+  processed = processed.replace(pollinationsRegex, (_match, promptEncoded) => {
+    return `/api/image?prompt=${promptEncoded}`;
+  });
+
+  // 4. Convert any raw image URL into markdown image tag if not enclosed
+  const rawUrlRegex = /(?<![\(\[])(\/api\/image\?prompt=[^\s\)]+)/g;
   processed = processed.replace(rawUrlRegex, (url) => `![Gambar AI](${url})`);
 
   return processed;
@@ -260,7 +305,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
             return <GeneratedImageCard src={src} alt={alt} />;
           },
           a({ href, children }: { href?: string; children?: React.ReactNode }) {
-            if (href && href.includes("image.pollinations.ai")) {
+            if (href && (href.startsWith("/api/image") || href.includes("pollinations.ai"))) {
               return <GeneratedImageCard src={href} alt={extractText(children) || "Gambar AI"} />;
             }
             return (
