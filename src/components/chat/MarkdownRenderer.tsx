@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -171,10 +171,40 @@ function GeneratedImageCard({ src, alt }: { src?: string; alt?: string }) {
   );
 }
 
+/** Pre-process streaming markdown text so incomplete raw image URLs are never shown as text */
+function preprocessMarkdownForImages(rawText: string): string {
+  if (!rawText) return "";
+
+  let processed = rawText;
+
+  // 1. Hide partial/incomplete markdown image tag during streaming
+  const incompleteImageMatch = /!\[([^\]]*)\]\((https:\/\/image\.pollinations\.ai[^\s\)]*)$/;
+  if (incompleteImageMatch.test(processed)) {
+    processed = processed.replace(
+      incompleteImageMatch,
+      "\n\n*(Sedang memproses gambar AI...)*\n\n"
+    );
+  }
+
+  // 2. Hide opening image tag during streaming if URL not yet closed
+  const partialTagMatch = /!\[([^\]]*)\]\($/;
+  if (partialTagMatch.test(processed)) {
+    processed = processed.replace(partialTagMatch, "\n\n*(Sedang memproses gambar AI...)*\n\n");
+  }
+
+  // 3. Convert any raw Pollinations URL to image markdown
+  const rawUrlRegex = /(?<![\(\[])https:\/\/image\.pollinations\.ai\/prompt\/[^\s\)]+/g;
+  processed = processed.replace(rawUrlRegex, (url) => `![Gambar AI](${url})`);
+
+  return processed;
+}
+
 /** Render markdown aman dengan syntax highlighting, copy code button, dan AI image card preview. */
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   content,
 }: MarkdownRendererProps): React.JSX.Element {
+  const sanitizedContent = useMemo(() => preprocessMarkdownForImages(content), [content]);
+
   return (
     <div className="markdown-body text-card-foreground">
       <ReactMarkdown
@@ -229,9 +259,19 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
           img({ src, alt }: { src?: string; alt?: string }) {
             return <GeneratedImageCard src={src} alt={alt} />;
           },
+          a({ href, children }: { href?: string; children?: React.ReactNode }) {
+            if (href && href.includes("image.pollinations.ai")) {
+              return <GeneratedImageCard src={href} alt={extractText(children) || "Gambar AI"} />;
+            }
+            return (
+              <a href={href} target="_blank" rel="noopener noreferrer">
+                {children}
+              </a>
+            );
+          },
         }}
       >
-        {content}
+        {sanitizedContent}
       </ReactMarkdown>
     </div>
   );
