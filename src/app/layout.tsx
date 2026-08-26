@@ -19,6 +19,11 @@ export const metadata: Metadata = {
   title: `${APP_NAME} — Asisten AI Cerdas`,
   description:
     "Asisten AI cerdas dan intuitif untuk percakapan, analisis dokumen, coding, dan pembuatan gambar.",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
