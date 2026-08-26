@@ -482,7 +482,7 @@ export function Sidebar({ onNavigate, onToggleCollapse, collapsed = false }: Sid
                   <span className="block truncate text-xs font-semibold text-white">
                     {user.displayName || "Pengguna"}
                   </span>
-                  <span className="block text-[10px] text-gray-400">Free</span>
+                  <span className="block text-[10px] text-gray-400 truncate">{user.email || ""}</span>
                 </div>
               </div>
               <ChevronRight className="h-4 w-4 text-gray-400" />
@@ -556,7 +556,7 @@ export function Sidebar({ onNavigate, onToggleCollapse, collapsed = false }: Sid
                 <span className="block truncate text-xs font-semibold text-foreground">
                   {user.displayName || "Pengguna"}
                 </span>
-                <span className="block text-[10px] text-muted-foreground">Free</span>
+                <span className="block text-[10px] text-muted-foreground truncate">{user.email || ""}</span>
               </div>
             </div>
 
