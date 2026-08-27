@@ -9,6 +9,7 @@ import "highlight.js/styles/github-dark.css";
 
 import { useToast } from "@/contexts/ToastContext";
 import { cn } from "@/lib/utils/cn";
+import { ArtifactPreview } from "./ArtifactPreview";
 
 interface MarkdownRendererProps {
   content: string;
@@ -296,9 +297,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
             }
 
             return (
-              <CodeBlockHeader language={language} rawCode={rawCode}>
+              <ArtifactPreview language={language} rawCode={rawCode}>
                 {children}
-              </CodeBlockHeader>
+              </ArtifactPreview>
             );
           },
           img({ src, alt }: { src?: string; alt?: string }) {
