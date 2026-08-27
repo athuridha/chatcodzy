@@ -35,31 +35,31 @@ type ViewportMode = "desktop" | "tablet" | "mobile";
 function transformReactSource(raw: string): string {
   let code = raw;
 
-  // 1. Convert React imports to destructuring from React global
+  // 1. Convert React imports to var destructuring from React global (var allows safe redeclaration)
   code = code.replace(
     /import\s+React\s*,\s*\{([^}]+)\}\s+from\s+['"][^'"]+['"];?/g,
-    "const { $1 } = React;"
+    "var { $1 } = React;"
   );
   code = code.replace(
     /import\s*\{([^}]+)\}\s+from\s+['"]react['"];?/g,
-    "const { $1 } = React;"
+    "var { $1 } = React;"
   );
   code = code.replace(/import\s+React\s+from\s+['"]react['"];?/g, "");
 
-  // 2. Convert Lucide React icon imports to destructuring from window.LucideIcons
+  // 2. Convert Lucide React icon imports to var destructuring from window.LucideIcons
   code = code.replace(
     /import\s*\{([^}]+)\}\s+from\s+['"][^'"]*lucide[^'"]*['"];?/g,
-    "const { $1 } = window.LucideIcons;"
+    "var { $1 } = window.LucideIcons;"
   );
   code = code.replace(
     /import\s*\*\s*as\s+([A-Za-z0-9_]+)\s+from\s+['"][^'"]*lucide[^'"]*['"];?/g,
-    "const $1 = window.LucideIcons;"
+    "var $1 = window.LucideIcons;"
   );
 
-  // 3. Remove framer-motion / other imports gracefully
+  // 3. Remove other 3rd-party imports gracefully
   code = code.replace(/import\s+.*from\s+['"][^'"]+['"];?/g, "");
 
-  // 4. Strip `export default` cleanly
+  // 4. Strip `export default` and export statements cleanly
   code = code.replace(/export\s+default\s+function\s+/g, "function ");
   code = code.replace(/export\s+default\s+class\s+/g, "class ");
   code = code.replace(/export\s+default\s+/g, "var __DefaultExport__ = ");
@@ -135,10 +135,10 @@ function buildRunnerDocument(rawCode: string, language: string): string {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   
-  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.0/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 
   <style>
     * { box-sizing: border-box; }
@@ -185,6 +185,18 @@ function buildRunnerDocument(rawCode: string, language: string): string {
   </style>
 
   <script>
+    // Global error listener to prevent silent failures
+    window.onerror = function(msg, url, line, col, error) {
+      var loader = document.getElementById('loader');
+      if (loader) loader.style.display = 'none';
+      var errBox = document.getElementById('error-overlay');
+      if (errBox) {
+        errBox.style.display = 'block';
+        errBox.innerText = 'Runtime Error: ' + (error ? (error.stack || error.message) : msg);
+      }
+      return false;
+    };
+
     // Universal Lucide React Component Proxy
     window.LucideIcons = new Proxy({}, {
       get: function(target, prop) {
@@ -233,8 +245,14 @@ function buildRunnerDocument(rawCode: string, language: string): string {
       }
     }
 
+    var attempts = 0;
     function startExecution() {
+      attempts++;
       if (typeof Babel === 'undefined' || typeof React === 'undefined' || typeof ReactDOM === 'undefined' || !document.getElementById('root')) {
+        if (attempts > 200) {
+          showError('Gagal memuat pustaka React / Babel dari CDN. Silakan muat ulang halaman.');
+          return;
+        }
         setTimeout(startExecution, 25);
         return;
       }
@@ -246,49 +264,44 @@ function buildRunnerDocument(rawCode: string, language: string): string {
           filename: 'app.tsx'
         }).code;
 
-        // Run in global scope
-        const scriptEl = document.createElement('script');
-        scriptEl.text = \`
-          try {
-            const { useState, useEffect, useMemo, useRef, useCallback, useContext, createContext } = React;
+        // Execute in safe function sandbox
+        const runner = new Function(
+          'React', 'ReactDOM', 'useState', 'useEffect', 'useMemo', 'useRef', 'useCallback', 'useContext', 'createContext',
+          \`
+            var useState = React.useState;
+            var useEffect = React.useEffect;
+            var useMemo = React.useMemo;
+            var useRef = React.useRef;
+            var useCallback = React.useCallback;
+            var useContext = React.useContext;
+            var createContext = React.createContext;
+
             \${transformed}
 
             var RootTarget = (typeof App !== 'undefined' ? App : (typeof LandingPage !== 'undefined' ? LandingPage : (typeof Main !== 'undefined' ? Main : (typeof HeroSection !== 'undefined' ? HeroSection : (typeof Component !== 'undefined' ? Component : (typeof __DefaultExport__ !== 'undefined' ? __DefaultExport__ : null))))));
             
-            if (!RootTarget) {
-              var fns = Object.keys(window).filter(function(k) {
-                return typeof window[k] === 'function' && /^[A-Z]/.test(k) && k !== 'React' && k !== 'ReactDOM' && k !== 'Babel' && k !== 'LucideIcons' && k !== 'Lucide' && k !== 'LucideReact';
-              });
-              if (fns.length > 0) RootTarget = window[fns[0]];
-            }
-            
-            var loader = document.getElementById('loader');
-            if (loader) loader.style.display = 'none';
+            return RootTarget;
+          \`
+        );
 
-            if (RootTarget) {
-              const root = ReactDOM.createRoot(document.getElementById('root'));
-              root.render(React.createElement(RootTarget));
-            } else {
-              document.getElementById('root').innerHTML = '<div style="padding: 2.5rem; text-align: center; color: #64748b;">Komponen siap.</div>';
-            }
-          } catch (execErr) {
-            window.parent && window.parent.console && window.parent.console.error(execErr);
-            var loader = document.getElementById('loader');
-            if (loader) loader.style.display = 'none';
-            var errBox = document.getElementById('error-overlay');
-            if (errBox) {
-              errBox.style.display = 'block';
-              errBox.innerText = 'Runtime Error:\\n' + (execErr.stack || execErr.message || execErr);
-            }
-          }
-        \`;
-        document.body.appendChild(scriptEl);
-      } catch (babelErr) {
-        showError('Babel Compilation Error:\\n' + (babelErr.stack || babelErr.message || babelErr));
+        const ComponentToRender = runner(
+          React, ReactDOM, React.useState, React.useEffect, React.useMemo, React.useRef, React.useCallback, React.useContext, React.createContext
+        );
+
+        var loader = document.getElementById('loader');
+        if (loader) loader.style.display = 'none';
+
+        if (ComponentToRender) {
+          const root = ReactDOM.createRoot(document.getElementById('root'));
+          root.render(React.createElement(ComponentToRender));
+        } else {
+          document.getElementById('root').innerHTML = '<div style="padding: 2.5rem; text-align: center; color: #64748b;">Komponen siap.</div>';
+        }
+      } catch (err) {
+        showError('Babel / React Execution Error:\\n' + (err.stack || err.message || err));
       }
     }
 
-    // Start polling immediately without waiting for window.onload
     startExecution();
   </script>
 </body>
