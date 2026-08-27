@@ -30,7 +30,7 @@ interface ArtifactPreviewProps {
 type ViewportMode = "desktop" | "tablet" | "mobile";
 
 /**
- * Transforms React JSX/TSX into executable browser code.
+ * Transforms React JSX/TSX into clean browser executable code.
  */
 function transformReactSource(raw: string): string {
   let code = raw;
@@ -56,13 +56,22 @@ function transformReactSource(raw: string): string {
     "const $1 = window.LucideIcons;"
   );
 
-  // 3. Remove framer-motion / clsx / other imports gracefully
+  // 3. Remove framer-motion / other imports gracefully
   code = code.replace(/import\s+.*from\s+['"][^'"]+['"];?/g, "");
 
-  // 4. Strip `export default function Name` -> `function Name`
-  code = code.replace(/export\s+default\s+function\s+([A-Za-z0-9_]+)/g, "function $1");
-  code = code.replace(/export\s+default\s+class\s+([A-Za-z0-9_]+)/g, "class $1");
-  code = code.replace(/export\s+default\s+([A-Za-z0-9_]+);?/g, "window.__DefaultExport__ = $1;");
+  // 4. Transform `export default` and record component to window.__RootComponent__
+  code = code.replace(
+    /export\s+default\s+function\s+([A-Za-z0-9_]+)/g,
+    "function $1\nwindow.__RootComponent__ = $1;"
+  );
+  code = code.replace(
+    /export\s+default\s+class\s+([A-Za-z0-9_]+)/g,
+    "class $1\nwindow.__RootComponent__ = $1;"
+  );
+  code = code.replace(
+    /export\s+default\s+([A-Za-z0-9_]+);?/g,
+    "window.__RootComponent__ = $1;"
+  );
   code = code.replace(/export\s+(const|let|var|function|class)\s+/g, "$1 ");
 
   return code;
@@ -117,7 +126,7 @@ function buildRunnerDocument(rawCode: string, language: string): string {
     const escapedSource = JSON.stringify(transformedCode);
 
     return `<!DOCTYPE html>
-<html lang="id" class="dark">
+<html lang="id">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -146,8 +155,8 @@ function buildRunnerDocument(rawCode: string, language: string): string {
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
       margin: 0;
       padding: 0;
-      background-color: #030712;
-      color: #f3f4f6;
+      background-color: #ffffff;
+      color: #0f172a;
       min-height: 100vh;
     }
     #error-overlay {
@@ -169,15 +178,15 @@ function buildRunnerDocument(rawCode: string, language: string): string {
       align-items: center;
       justify-content: center;
       min-height: 45vh;
-      gap: 1rem;
-      color: #60a5fa;
+      gap: 0.75rem;
+      color: #3b82f6;
       font-size: 0.85rem;
     }
     .spinner {
       width: 28px;
       height: 28px;
-      border: 3px solid rgba(96,165,250,0.2);
-      border-top-color: #60a5fa;
+      border: 3px solid rgba(59,130,246,0.2);
+      border-top-color: #3b82f6;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
@@ -185,6 +194,7 @@ function buildRunnerDocument(rawCode: string, language: string): string {
   </style>
 
   <script>
+    // Universal Lucide React Component Proxy
     window.LucideIcons = new Proxy({}, {
       get: function(target, prop) {
         if (typeof prop !== 'string') return undefined;
@@ -218,7 +228,7 @@ function buildRunnerDocument(rawCode: string, language: string): string {
 </head>
 <body>
   <div id="error-overlay"></div>
-  <div id="loader"><div class="spinner"></div><div>Merender preview React...</div></div>
+  <div id="loader"><div class="spinner"></div><div>Memuat komponen React...</div></div>
   <div id="root"></div>
 
   <script>
@@ -232,50 +242,56 @@ function buildRunnerDocument(rawCode: string, language: string): string {
       }
     }
 
-    function init() {
-      try {
-        if (typeof Babel === 'undefined' || typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
-          setTimeout(init, 50);
-          return;
-        }
+    function startExecution() {
+      if (typeof Babel === 'undefined' || typeof React === 'undefined' || typeof ReactDOM === 'undefined' || !document.getElementById('root')) {
+        setTimeout(startExecution, 25);
+        return;
+      }
 
+      try {
         const source = ${escapedSource};
         const transformed = Babel.transform(source, {
-          presets: ['react', 'env'],
+          presets: ['react', 'typescript'],
           filename: 'app.tsx'
         }).code;
 
-        // Execute in window scope with React hooks available
-        const runFn = new Function(
-          'React', 'ReactDOM', 'useState', 'useEffect', 'useMemo', 'useRef', 'useCallback', 'useContext', 'createContext',
-          transformed + '\\n' +
-          'var target = window.__DefaultExport__ || (typeof App !== "undefined" ? App : (typeof LandingPage !== "undefined" ? LandingPage : (typeof Main !== "undefined" ? Main : (typeof HeroSection !== "undefined" ? HeroSection : null))));' +
-          'return target;'
-        );
+        // Run in global scope
+        const scriptEl = document.createElement('script');
+        scriptEl.text = \`
+          try {
+            const { useState, useEffect, useMemo, useRef, useCallback, useContext, createContext } = React;
+            \${transformed}
 
-        const Component = runFn(
-          React, ReactDOM, React.useState, React.useEffect, React.useMemo, React.useRef, React.useCallback, React.useContext, React.createContext
-        );
+            var RootTarget = window.__RootComponent__ || (typeof App !== 'undefined' ? App : (typeof LandingPage !== 'undefined' ? LandingPage : (typeof Main !== 'undefined' ? Main : (typeof HeroSection !== 'undefined' ? HeroSection : null))));
+            
+            var loader = document.getElementById('loader');
+            if (loader) loader.style.display = 'none';
 
-        var loader = document.getElementById('loader');
-        if (loader) loader.style.display = 'none';
-
-        if (Component) {
-          const root = ReactDOM.createRoot(document.getElementById('root'));
-          root.render(React.createElement(Component));
-        } else {
-          document.getElementById('root').innerHTML = '<div style="padding: 2.5rem; text-align: center; color: #94a3b8;">Komponen siap.</div>';
-        }
-      } catch (err) {
-        showError('Babel / React Execution Error:\\n' + (err.stack || err.message || err));
+            if (RootTarget) {
+              const root = ReactDOM.createRoot(document.getElementById('root'));
+              root.render(React.createElement(RootTarget));
+            } else {
+              document.getElementById('root').innerHTML = '<div style="padding: 2.5rem; text-align: center; color: #64748b;">Komponen siap.</div>';
+            }
+          } catch (execErr) {
+            window.parent && window.parent.console && window.parent.console.error(execErr);
+            var loader = document.getElementById('loader');
+            if (loader) loader.style.display = 'none';
+            var errBox = document.getElementById('error-overlay');
+            if (errBox) {
+              errBox.style.display = 'block';
+              errBox.innerText = 'Runtime Error:\\n' + (execErr.stack || execErr.message || execErr);
+            }
+          }
+        \`;
+        document.body.appendChild(scriptEl);
+      } catch (babelErr) {
+        showError('Babel Compilation Error:\\n' + (babelErr.stack || babelErr.message || babelErr));
       }
     }
 
-    if (document.readyState === 'complete') {
-      init();
-    } else {
-      window.addEventListener('load', init);
-    }
+    // Start polling immediately without waiting for window.onload
+    startExecution();
   </script>
 </body>
 </html>`;
@@ -297,7 +313,7 @@ function buildRunnerDocument(rawCode: string, language: string): string {
 
   // HTML Snippet -> Wrap in standard boilerplate
   return `<!DOCTYPE html>
-<html lang="id" class="dark">
+<html lang="id">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -305,7 +321,7 @@ function buildRunnerDocument(rawCode: string, language: string): string {
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>body { font-family: 'Plus Jakarta Sans', sans-serif; }</style>
 </head>
-<body class="bg-slate-950 text-slate-100 antialiased min-h-screen">
+<body class="bg-white text-slate-900 antialiased min-h-screen">
   ${rawCode}
 </body>
 </html>`;
@@ -629,7 +645,7 @@ export function ArtifactPreview({
           >
             <div
               className={cn(
-                "h-full w-full overflow-hidden rounded-xl border border-white/10 bg-[#030712] shadow-2xl transition-all duration-300 relative",
+                "h-full w-full overflow-hidden rounded-xl border border-white/10 bg-white shadow-2xl transition-all duration-300 relative",
                 viewport === "mobile"
                   ? "max-w-[375px] rounded-3xl border-2 border-slate-700 shadow-[0_0_50px_rgba(0,0,0,0.8)]"
                   : viewport === "tablet"
@@ -644,10 +660,10 @@ export function ArtifactPreview({
                   srcDoc={debouncedDoc}
                   title="Codzy Live Preview"
                   sandbox="allow-scripts allow-modals allow-same-origin allow-forms"
-                  className="h-full w-full border-0 bg-transparent"
+                  className="h-full w-full border-0 bg-white"
                 />
               ) : (
-                <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center text-slate-400">
+                <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center text-slate-400 bg-[#030712]">
                   <Loader2 className="h-7 w-7 animate-spin text-blue-500" />
                   <div className="space-y-1">
                     <p className="text-sm font-semibold text-slate-200">Sedang menyusun kode aplikasi...</p>
