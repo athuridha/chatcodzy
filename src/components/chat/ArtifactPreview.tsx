@@ -62,7 +62,7 @@ function transformReactSource(raw: string): string {
   // 4. Strip `export default function Name` -> `function Name`
   code = code.replace(/export\s+default\s+function\s+([A-Za-z0-9_]+)/g, "function $1");
   code = code.replace(/export\s+default\s+class\s+([A-Za-z0-9_]+)/g, "class $1");
-  code = code.replace(/export\s+default\s+([A-Za-z0-9_]+);?/g, "var defaultExport = $1;");
+  code = code.replace(/export\s+default\s+([A-Za-z0-9_]+);?/g, "window.__DefaultExport__ = $1;");
   code = code.replace(/export\s+(const|let|var|function|class)\s+/g, "$1 ");
 
   return code;
@@ -114,42 +114,30 @@ function buildRunnerDocument(rawCode: string, language: string): string {
 
   if (isReact) {
     const transformedCode = transformReactSource(rawCode);
+    const escapedSource = JSON.stringify(transformedCode);
 
     return `<!DOCTYPE html>
 <html lang="id" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Codzy React Preview</title>
+  <title>Codzy Live Preview</title>
   
-  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' }
-          }
-        }
-      }
-    }
+      theme: { extend: {} }
+    };
   </script>
   
-  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   
-  <!-- React 18 & ReactDOM 18 (Production CDN) -->
-  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  
-  <!-- Babel Standalone (JSX / TSX Transpiler) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
-  
-  <!-- Lucide Icons Vanilla Engine -->
+  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 
   <style>
@@ -175,11 +163,28 @@ function buildRunnerDocument(rawCode: string, language: string): string {
       white-space: pre-wrap;
       word-break: break-word;
     }
+    #loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 45vh;
+      gap: 1rem;
+      color: #60a5fa;
+      font-size: 0.85rem;
+    }
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid rgba(96,165,250,0.2);
+      border-top-color: #60a5fa;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 
   <script>
-    // Universal Lucide React Component Proxy:
-    // Creates SVG element for ANY requested icon name dynamically!
     window.LucideIcons = new Proxy({}, {
       get: function(target, prop) {
         if (typeof prop !== 'string') return undefined;
@@ -189,26 +194,13 @@ function buildRunnerDocument(rawCode: string, language: string): string {
           var className = props.className || '';
           var color = props.color || 'currentColor';
           var strokeWidth = props.strokeWidth || 2;
-          
           var iconName = prop.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
           var svgHtml = '';
           
           if (window.lucide && window.lucide.icons && window.lucide.icons[prop]) {
-            svgHtml = window.lucide.icons[prop].toSvg({
-              width: size,
-              height: size,
-              class: className,
-              stroke: color,
-              'stroke-width': strokeWidth
-            });
+            svgHtml = window.lucide.icons[prop].toSvg({ width: size, height: size, class: className, stroke: color, 'stroke-width': strokeWidth });
           } else if (window.lucide && window.lucide.icons && window.lucide.icons[iconName]) {
-            svgHtml = window.lucide.icons[iconName].toSvg({
-              width: size,
-              height: size,
-              class: className,
-              stroke: color,
-              'stroke-width': strokeWidth
-            });
+            svgHtml = window.lucide.icons[iconName].toSvg({ width: size, height: size, class: className, stroke: color, 'stroke-width': strokeWidth });
           } else {
             svgHtml = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="' + strokeWidth + '" stroke-linecap="round" stroke-linejoin="round" class="' + className + '"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
           }
@@ -220,63 +212,69 @@ function buildRunnerDocument(rawCode: string, language: string): string {
         };
       }
     });
-
     window.Lucide = window.LucideIcons;
     window.LucideReact = window.LucideIcons;
-
-    // Polyfill framer-motion stubs
-    window.motion = new Proxy({}, { get: function(_, tag) { return tag; } });
-    window.AnimatePresence = function(p) { return p.children; };
   </script>
 </head>
-<body class="bg-[#030712] text-slate-100 antialiased selection:bg-blue-500 selection:text-white">
+<body>
   <div id="error-overlay"></div>
+  <div id="loader"><div class="spinner"></div><div>Merender preview React...</div></div>
   <div id="root"></div>
 
-  <script type="text/babel" data-presets="env,react,typescript">
-    window.addEventListener('error', function(e) {
+  <script>
+    function showError(msg) {
+      var loader = document.getElementById('loader');
+      if (loader) loader.style.display = 'none';
       var errBox = document.getElementById('error-overlay');
       if (errBox) {
         errBox.style.display = 'block';
-        errBox.innerText = 'Runtime Error: ' + (e.error ? (e.error.message || e.error) : e.message);
+        errBox.innerText = msg;
       }
-    });
+    }
 
-    try {
-      const { useState, useEffect, useMemo, useRef, useCallback, useContext, createContext } = React;
-      const { motion, AnimatePresence } = window;
-      const Lucide = window.LucideIcons;
-      const LucideReact = window.LucideIcons;
+    function init() {
+      try {
+        if (typeof Babel === 'undefined' || typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+          setTimeout(init, 50);
+          return;
+        }
 
-      ${transformedCode}
+        const source = ${escapedSource};
+        const transformed = Babel.transform(source, {
+          presets: ['react', 'env'],
+          filename: 'app.tsx'
+        }).code;
 
-      // Automatically find and render the main exported component
-      var ComponentToRender = null;
-      if (typeof App !== 'undefined') ComponentToRender = App;
-      else if (typeof LandingPage !== 'undefined') ComponentToRender = LandingPage;
-      else if (typeof Main !== 'undefined') ComponentToRender = Main;
-      else if (typeof HeroSection !== 'undefined') ComponentToRender = HeroSection;
-      else if (typeof Component !== 'undefined') ComponentToRender = Component;
-      else if (typeof defaultExport !== 'undefined') ComponentToRender = defaultExport;
-      else {
-        var functionKeys = Object.keys(window).filter(function(k) {
-          return typeof window[k] === 'function' && /^[A-Z]/.test(k) && k !== 'React' && k !== 'ReactDOM' && k !== 'Babel' && k !== 'LucideIcons' && k !== 'Lucide' && k !== 'LucideReact';
-        });
-        if (functionKeys.length > 0) ComponentToRender = window[functionKeys[0]];
+        // Execute in window scope with React hooks available
+        const runFn = new Function(
+          'React', 'ReactDOM', 'useState', 'useEffect', 'useMemo', 'useRef', 'useCallback', 'useContext', 'createContext',
+          transformed + '\\n' +
+          'var target = window.__DefaultExport__ || (typeof App !== "undefined" ? App : (typeof LandingPage !== "undefined" ? LandingPage : (typeof Main !== "undefined" ? Main : (typeof HeroSection !== "undefined" ? HeroSection : null))));' +
+          'return target;'
+        );
+
+        const Component = runFn(
+          React, ReactDOM, React.useState, React.useEffect, React.useMemo, React.useRef, React.useCallback, React.useContext, React.createContext
+        );
+
+        var loader = document.getElementById('loader');
+        if (loader) loader.style.display = 'none';
+
+        if (Component) {
+          const root = ReactDOM.createRoot(document.getElementById('root'));
+          root.render(React.createElement(Component));
+        } else {
+          document.getElementById('root').innerHTML = '<div style="padding: 2.5rem; text-align: center; color: #94a3b8;">Komponen siap.</div>';
+        }
+      } catch (err) {
+        showError('Babel / React Execution Error:\\n' + (err.stack || err.message || err));
       }
+    }
 
-      if (ComponentToRender) {
-        var root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(React.createElement(ComponentToRender));
-      } else {
-        document.getElementById('root').innerHTML = '<div style="padding: 2.5rem; text-align: center; color: #94a3b8; font-size: 0.9rem;">Menunggu komponen React...</div>';
-      }
-    } catch (err) {
-      var errBox = document.getElementById('error-overlay');
-      if (errBox) {
-        errBox.style.display = 'block';
-        errBox.innerText = 'Babel / Execution Error: ' + (err.message || err);
-      }
+    if (document.readyState === 'complete') {
+      init();
+    } else {
+      window.addEventListener('load', init);
     }
   </script>
 </body>
@@ -453,10 +451,10 @@ export function ArtifactPreview({
         )}
       >
         {/* Top Header Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-neutral-900/95 px-3.5 py-2.5 backdrop-blur-md select-none">
+        <div className="flex h-11 items-center justify-between gap-2 border-b border-white/10 bg-neutral-900/95 px-3 backdrop-blur-md select-none">
           {/* Left: View Tabs & Type Badge */}
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-xl bg-neutral-950 p-1 border border-white/5 shadow-inner">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex rounded-xl bg-neutral-950 p-1 border border-white/5 shadow-inner shrink-0">
               <button
                 type="button"
                 onClick={(e) => {
@@ -465,7 +463,7 @@ export function ArtifactPreview({
                   setActiveTab("preview");
                 }}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition-all duration-200 cursor-pointer",
+                  "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all duration-200 cursor-pointer",
                   activeTab === "preview"
                     ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
                     : "text-slate-400 hover:text-slate-200"
@@ -482,7 +480,7 @@ export function ArtifactPreview({
                   setActiveTab("code");
                 }}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition-all duration-200 cursor-pointer",
+                  "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all duration-200 cursor-pointer",
                   activeTab === "code"
                     ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
                     : "text-slate-400 hover:text-slate-200"
@@ -493,21 +491,21 @@ export function ArtifactPreview({
               </button>
             </div>
 
-            <span className="hidden sm:inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold font-mono text-blue-400 border border-blue-500/20">
-              <Sparkles className="h-2.5 w-2.5" />
+            <span className="hidden md:inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold font-mono text-blue-400 border border-blue-500/20 truncate">
+              <Sparkles className="h-2.5 w-2.5 shrink-0" />
               {badgeLabel}
             </span>
 
             {isCompiling && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md animate-pulse">
-                <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                Streaming...
+              <span className="inline-flex items-center gap-1 text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md animate-pulse shrink-0">
+                <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0" />
+                <span className="hidden sm:inline">Compiling</span>
               </span>
             )}
           </div>
 
           {/* Right: Viewport Controls & Actions */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 shrink-0">
             {activeTab === "preview" && (
               <div className="flex items-center rounded-xl bg-neutral-950 p-0.5 border border-white/5 mr-1">
                 <button
