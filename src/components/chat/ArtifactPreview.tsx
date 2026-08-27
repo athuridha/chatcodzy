@@ -302,6 +302,7 @@ function buildRunnerDocument(rawCode: string, language: string): string {
     }
 
     startExecution();
+  </script>
 </body>
 </html>`;
   }
