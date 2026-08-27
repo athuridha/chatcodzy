@@ -135,10 +135,10 @@ function buildRunnerDocument(rawCode: string, language: string): string {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   
-  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.0/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.0/babel.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 
   <style>
     * { box-sizing: border-box; }
@@ -185,7 +185,7 @@ function buildRunnerDocument(rawCode: string, language: string): string {
   </style>
 
   <script>
-    // Global error listener to prevent silent failures
+    // Global error listener to report actual error stack
     window.onerror = function(msg, url, line, col, error) {
       var loader = document.getElementById('loader');
       if (loader) loader.style.display = 'none';
@@ -264,24 +264,23 @@ function buildRunnerDocument(rawCode: string, language: string): string {
           filename: 'app.tsx'
         }).code;
 
-        // Execute in safe function sandbox
+        // Construct runner using string array join
+        const fnBody = [
+          'var useState = React.useState;',
+          'var useEffect = React.useEffect;',
+          'var useMemo = React.useMemo;',
+          'var useRef = React.useRef;',
+          'var useCallback = React.useCallback;',
+          'var useContext = React.useContext;',
+          'var createContext = React.createContext;',
+          transformed,
+          'var RootTarget = (typeof App !== "undefined" ? App : (typeof LandingPage !== "undefined" ? LandingPage : (typeof Main !== "undefined" ? Main : (typeof HeroSection !== "undefined" ? HeroSection : (typeof Component !== "undefined" ? Component : (typeof __DefaultExport__ !== "undefined" ? __DefaultExport__ : null))))));',
+          'return RootTarget;'
+        ].join('\\n');
+
         const runner = new Function(
           'React', 'ReactDOM', 'useState', 'useEffect', 'useMemo', 'useRef', 'useCallback', 'useContext', 'createContext',
-          \`
-            var useState = React.useState;
-            var useEffect = React.useEffect;
-            var useMemo = React.useMemo;
-            var useRef = React.useRef;
-            var useCallback = React.useCallback;
-            var useContext = React.useContext;
-            var createContext = React.createContext;
-
-            \${transformed}
-
-            var RootTarget = (typeof App !== 'undefined' ? App : (typeof LandingPage !== 'undefined' ? LandingPage : (typeof Main !== 'undefined' ? Main : (typeof HeroSection !== 'undefined' ? HeroSection : (typeof Component !== 'undefined' ? Component : (typeof __DefaultExport__ !== 'undefined' ? __DefaultExport__ : null))))));
-            
-            return RootTarget;
-          \`
+          fnBody
         );
 
         const ComponentToRender = runner(
@@ -303,7 +302,6 @@ function buildRunnerDocument(rawCode: string, language: string): string {
     }
 
     startExecution();
-  </script>
 </body>
 </html>`;
   }
