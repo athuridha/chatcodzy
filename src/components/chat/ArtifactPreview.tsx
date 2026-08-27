@@ -59,19 +59,10 @@ function transformReactSource(raw: string): string {
   // 3. Remove framer-motion / other imports gracefully
   code = code.replace(/import\s+.*from\s+['"][^'"]+['"];?/g, "");
 
-  // 4. Transform `export default` and record component to window.__RootComponent__
-  code = code.replace(
-    /export\s+default\s+function\s+([A-Za-z0-9_]+)/g,
-    "function $1\nwindow.__RootComponent__ = $1;"
-  );
-  code = code.replace(
-    /export\s+default\s+class\s+([A-Za-z0-9_]+)/g,
-    "class $1\nwindow.__RootComponent__ = $1;"
-  );
-  code = code.replace(
-    /export\s+default\s+([A-Za-z0-9_]+);?/g,
-    "window.__RootComponent__ = $1;"
-  );
+  // 4. Strip `export default` cleanly
+  code = code.replace(/export\s+default\s+function\s+/g, "function ");
+  code = code.replace(/export\s+default\s+class\s+/g, "class ");
+  code = code.replace(/export\s+default\s+/g, "var __DefaultExport__ = ");
   code = code.replace(/export\s+(const|let|var|function|class)\s+/g, "$1 ");
 
   return code;
@@ -262,7 +253,14 @@ function buildRunnerDocument(rawCode: string, language: string): string {
             const { useState, useEffect, useMemo, useRef, useCallback, useContext, createContext } = React;
             \${transformed}
 
-            var RootTarget = window.__RootComponent__ || (typeof App !== 'undefined' ? App : (typeof LandingPage !== 'undefined' ? LandingPage : (typeof Main !== 'undefined' ? Main : (typeof HeroSection !== 'undefined' ? HeroSection : null))));
+            var RootTarget = (typeof App !== 'undefined' ? App : (typeof LandingPage !== 'undefined' ? LandingPage : (typeof Main !== 'undefined' ? Main : (typeof HeroSection !== 'undefined' ? HeroSection : (typeof Component !== 'undefined' ? Component : (typeof __DefaultExport__ !== 'undefined' ? __DefaultExport__ : null))))));
+            
+            if (!RootTarget) {
+              var fns = Object.keys(window).filter(function(k) {
+                return typeof window[k] === 'function' && /^[A-Z]/.test(k) && k !== 'React' && k !== 'ReactDOM' && k !== 'Babel' && k !== 'LucideIcons' && k !== 'Lucide' && k !== 'LucideReact';
+              });
+              if (fns.length > 0) RootTarget = window[fns[0]];
+            }
             
             var loader = document.getElementById('loader');
             if (loader) loader.style.display = 'none';
