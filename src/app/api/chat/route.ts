@@ -92,21 +92,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (err instanceof OpenRouterError) {
       if (err.isContextLength) {
         return jsonError(
-          "Percakapan terlalu panjang untuk context window. Mulai chat baru.",
+          "Percakapan sudah mencapai batas panjang konteks. Silakan mulai obrolan baru.",
           400
         );
       }
-      if (err.status === 429) {
-        return jsonError(
-          "Server model AI sedang sangat sibuk (rate limit antrean publik OpenRouter). Silakan coba kirim ulang dalam beberapa detik.",
-          429
-        );
-      }
-      console.error(`[POST /api/chat] OpenRouter ${err.status}:`, err.message);
-      return jsonError(`OpenRouter error (${err.status}): ${err.message}`, 500);
+      return jsonError(
+        "Layanan AI sedang sibuk. Silakan coba kirim pesan kembali beberapa saat lagi.",
+        503
+      );
     }
     console.error("[POST /api/chat] unexpected:", err);
-    return jsonError("Terjadi kesalahan internal server.", 500);
+    return jsonError("Terjadi kendala saat memproses pesan. Silakan coba lagi.", 500);
   }
 
   // 5. Return sebagai SSE

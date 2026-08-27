@@ -1,6 +1,6 @@
 # Chat Codzy
 
-Web chatbot AI percakapan (ChatGPT-like) dengan **memori jangka panjang permanen**, ditenagai OpenRouter (`stealth/ox-alpha`), Firebase Auth, dan Firestore.
+Web chatbot AI percakapan (ChatGPT-like) dengan **memori jangka panjang permanen**, ditenagai multi-provider AI cascade dengan silent auto-failover (OrcaRouter `deepseek-v4-flash-free` & `qwen3.8-27b-free`, TokenHarbor `qwen3.8-27b:free`, `deepseek-v4-flash:free`, `mimo-v2.5:free`, TokenRouter `qwen/qwen3.8-max-free`, dan OpenRouter `minimax/minimax-m3:free`), Firebase Auth, dan Firestore.
 
 ## Fitur
 

@@ -41,7 +41,7 @@ export interface UserStorageItem {
 export interface UserStorageStats {
   usedBytes: number;
   maxBytes: number; // 512 MB = 512 * 1024 * 1024
-  maxUploadBytes: number; // 100 MB = 100 * 1024 * 1024
+  maxUploadBytes: number; // 50 MB = 50 * 1024 * 1024
   filesCount: number;
   filesBytes: number;
   imagesCount: number;

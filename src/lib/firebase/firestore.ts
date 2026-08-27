@@ -168,7 +168,7 @@ export async function hardDeleteChat(chatId: string): Promise<void> {
 }
 
 export const USER_MAX_STORAGE_BYTES = 512 * 1024 * 1024; // 512 MB
-export const USER_MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
+export const USER_MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 
 export interface StoredUserFile {
   id: string;

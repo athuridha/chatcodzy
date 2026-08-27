@@ -218,7 +218,7 @@ export function StorageManager(): React.JSX.Element {
             <strong className="font-bold">{usedMB} MB</strong> dari 512 MB terpakai
           </span>
           <span className="text-[11px] text-muted-foreground">
-            Maks. 100 MB / upload
+            Maks. 50 MB / upload
           </span>
         </div>
 

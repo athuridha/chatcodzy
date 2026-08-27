@@ -44,7 +44,7 @@ interface ChatInputProps {
 }
 
 const MAX_HEIGHT = 180;
-const MAX_FILE_SIZE_MB = 100; // 100 MB per file upload limit
+const MAX_FILE_SIZE_MB = 50; // 50 MB per file upload limit (matching Telegram API & LLM safe limit)
 
 function compressImage(file: File, maxDim = 1280, quality = 0.85): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -369,13 +369,21 @@ export function ChatInput({
       onCancelReply?.();
     }
 
-    // Build document context for AI prompt
+    // Build document context for AI prompt (with safe text cap for LLM context window)
     const docFiles = attachments.filter((a) => a.type === "document" && a.textContent);
     const docMetadata = docFiles.map((d) => ({ name: d.name, size: d.size }));
 
     if (docFiles.length > 0) {
       const docSections = docFiles
-        .map((d) => `--- [Dokumen: ${d.name}] ---\n${d.textContent}\n--- [Akhir Dokumen ${d.name}] ---`)
+        .map((d) => {
+          let content = d.textContent || "";
+          if (content.length > 150000) {
+            content =
+              content.slice(0, 150000) +
+              "\n\n[... Teks dokumen dipotong sebagian agar sesuai dengan batas konteks pemrosesan AI ...]";
+          }
+          return `--- [Dokumen: ${d.name}] ---\n${content}\n--- [Akhir Dokumen ${d.name}] ---`;
+        })
         .join("\n\n");
       fullPromptForAI = `${docSections}\n\n${fullPromptForAI}`;
     }

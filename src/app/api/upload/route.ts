@@ -4,7 +4,7 @@ import { uploadToTelegramChannel } from "@/lib/telegram/storage";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_UPLOAD_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB per file limit
+const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB per file limit (Telegram API safe limit)
 
 export async function POST(req: NextRequest): Promise<Response> {
   try {
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     if (file.size > MAX_UPLOAD_SIZE_BYTES) {
       return NextResponse.json(
-        { error: "Ukuran file melebihi batas maksimal upload 100 MB." },
+        { error: "Ukuran file melebihi batas maksimal upload 50 MB." },
         { status: 400 }
       );
     }
