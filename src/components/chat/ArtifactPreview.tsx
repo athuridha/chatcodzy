@@ -30,6 +30,45 @@ interface ArtifactPreviewProps {
 type ViewportMode = "desktop" | "tablet" | "mobile";
 
 /**
+ * Transforms React JSX/TSX into executable browser code.
+ */
+function transformReactSource(raw: string): string {
+  let code = raw;
+
+  // 1. Convert React imports to destructuring from React global
+  code = code.replace(
+    /import\s+React\s*,\s*\{([^}]+)\}\s+from\s+['"][^'"]+['"];?/g,
+    "const { $1 } = React;"
+  );
+  code = code.replace(
+    /import\s*\{([^}]+)\}\s+from\s+['"]react['"];?/g,
+    "const { $1 } = React;"
+  );
+  code = code.replace(/import\s+React\s+from\s+['"]react['"];?/g, "");
+
+  // 2. Convert Lucide React icon imports to destructuring from window.LucideIcons
+  code = code.replace(
+    /import\s*\{([^}]+)\}\s+from\s+['"][^'"]*lucide[^'"]*['"];?/g,
+    "const { $1 } = window.LucideIcons;"
+  );
+  code = code.replace(
+    /import\s*\*\s*as\s+([A-Za-z0-9_]+)\s+from\s+['"][^'"]*lucide[^'"]*['"];?/g,
+    "const $1 = window.LucideIcons;"
+  );
+
+  // 3. Remove framer-motion / clsx / other imports gracefully
+  code = code.replace(/import\s+.*from\s+['"][^'"]+['"];?/g, "");
+
+  // 4. Strip `export default function Name` -> `function Name`
+  code = code.replace(/export\s+default\s+function\s+([A-Za-z0-9_]+)/g, "function $1");
+  code = code.replace(/export\s+default\s+class\s+([A-Za-z0-9_]+)/g, "class $1");
+  code = code.replace(/export\s+default\s+([A-Za-z0-9_]+);?/g, "var defaultExport = $1;");
+  code = code.replace(/export\s+(const|let|var|function|class)\s+/g, "$1 ");
+
+  return code;
+}
+
+/**
  * Builds a sandboxed self-contained HTML bundle for React (JSX/TSX) or plain HTML.
  */
 function buildRunnerDocument(rawCode: string, language: string): string {
@@ -74,33 +113,7 @@ function buildRunnerDocument(rawCode: string, language: string): string {
   }
 
   if (isReact) {
-    let cleanedCode = rawCode;
-
-    // Sanitize imports for in-browser ESM
-    cleanedCode = cleanedCode.replace(
-      /import\s+React,\s*\{([^}]+)\}\s+from\s+['"]react['"];?/g,
-      "const { $1 } = React;"
-    );
-    cleanedCode = cleanedCode.replace(
-      /import\s+\{([^}]+)\}\s+from\s+['"]react['"];?/g,
-      "const { $1 } = React;"
-    );
-    cleanedCode = cleanedCode.replace(
-      /import\s+React\s+from\s+['"]react['"];?/g,
-      ""
-    );
-    cleanedCode = cleanedCode.replace(
-      /import\s+\{([^}]+)\}\s+from\s+['"]lucide-react['"];?/g,
-      "const { $1 } = LucideIcons;"
-    );
-    cleanedCode = cleanedCode.replace(
-      /import\s+\*\s+as\s+Lucide\s+from\s+['"]lucide-react['"];?/g,
-      "const Lucide = LucideIcons;"
-    );
-    cleanedCode = cleanedCode.replace(
-      /import\s+framerMotion\s+from\s+['"]framer-motion['"];?/g,
-      ""
-    );
+    const transformedCode = transformReactSource(rawCode);
 
     return `<!DOCTYPE html>
 <html lang="id" class="dark">
@@ -108,6 +121,8 @@ function buildRunnerDocument(rawCode: string, language: string): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Codzy React Preview</title>
+  
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -121,17 +136,24 @@ function buildRunnerDocument(rawCode: string, language: string): string {
       }
     }
   </script>
+  
+  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.js"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
+  <!-- React 18 & ReactDOM 18 (Production CDN) -->
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel Standalone (JSX / TSX Transpiler) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
+  
+  <!-- Lucide Icons Vanilla Engine -->
+  <script src="https://unpkg.com/lucide@latest"></script>
 
   <style>
+    * { box-sizing: border-box; }
     body {
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
       margin: 0;
@@ -140,7 +162,7 @@ function buildRunnerDocument(rawCode: string, language: string): string {
       color: #f3f4f6;
       min-height: 100vh;
     }
-    #error-container {
+    #error-overlay {
       display: none;
       padding: 1.5rem;
       background: #450a0a;
@@ -151,62 +173,109 @@ function buildRunnerDocument(rawCode: string, language: string): string {
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.85rem;
       white-space: pre-wrap;
+      word-break: break-word;
     }
   </style>
+
+  <script>
+    // Universal Lucide React Component Proxy:
+    // Creates SVG element for ANY requested icon name dynamically!
+    window.LucideIcons = new Proxy({}, {
+      get: function(target, prop) {
+        if (typeof prop !== 'string') return undefined;
+        return function DynamicLucideIcon(props) {
+          props = props || {};
+          var size = props.size || 20;
+          var className = props.className || '';
+          var color = props.color || 'currentColor';
+          var strokeWidth = props.strokeWidth || 2;
+          
+          var iconName = prop.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+          var svgHtml = '';
+          
+          if (window.lucide && window.lucide.icons && window.lucide.icons[prop]) {
+            svgHtml = window.lucide.icons[prop].toSvg({
+              width: size,
+              height: size,
+              class: className,
+              stroke: color,
+              'stroke-width': strokeWidth
+            });
+          } else if (window.lucide && window.lucide.icons && window.lucide.icons[iconName]) {
+            svgHtml = window.lucide.icons[iconName].toSvg({
+              width: size,
+              height: size,
+              class: className,
+              stroke: color,
+              'stroke-width': strokeWidth
+            });
+          } else {
+            svgHtml = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="' + strokeWidth + '" stroke-linecap="round" stroke-linejoin="round" class="' + className + '"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+          }
+
+          return React.createElement('span', {
+            style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
+            dangerouslySetInnerHTML: { __html: svgHtml }
+          });
+        };
+      }
+    });
+
+    window.Lucide = window.LucideIcons;
+    window.LucideReact = window.LucideIcons;
+
+    // Polyfill framer-motion stubs
+    window.motion = new Proxy({}, { get: function(_, tag) { return tag; } });
+    window.AnimatePresence = function(p) { return p.children; };
+  </script>
 </head>
 <body class="bg-[#030712] text-slate-100 antialiased selection:bg-blue-500 selection:text-white">
-  <div id="error-container"></div>
+  <div id="error-overlay"></div>
   <div id="root"></div>
 
-  <script type="text/babel">
-    window.onerror = function(msg, url, line, col, error) {
-      const errBox = document.getElementById('error-container');
+  <script type="text/babel" data-presets="env,react,typescript">
+    window.addEventListener('error', function(e) {
+      var errBox = document.getElementById('error-overlay');
       if (errBox) {
         errBox.style.display = 'block';
-        errBox.innerHTML = '<strong>⚠️ Runtime / Compilation Error:</strong>\\n' + msg + (line ? '\\nLine: ' + line : '');
+        errBox.innerText = 'Runtime Error: ' + (e.error ? (e.error.message || e.error) : e.message);
       }
-      return false;
-    };
+    });
 
     try {
-      const LucideIcons = window.LucideReact || window.lucide || {};
+      const { useState, useEffect, useMemo, useRef, useCallback, useContext, createContext } = React;
+      const { motion, AnimatePresence } = window;
+      const Lucide = window.LucideIcons;
+      const LucideReact = window.LucideIcons;
 
-      ${cleanedCode}
+      ${transformedCode}
 
-      let RootComponent = null;
-      if (typeof App !== 'undefined') {
-        RootComponent = App;
-      } else if (typeof Main !== 'undefined') {
-        RootComponent = Main;
-      } else if (typeof LandingPage !== 'undefined') {
-        RootComponent = LandingPage;
-      } else if (typeof Component !== 'undefined') {
-        RootComponent = Component;
-      } else if (typeof defaultExport !== 'undefined') {
-        RootComponent = defaultExport;
+      // Automatically find and render the main exported component
+      var ComponentToRender = null;
+      if (typeof App !== 'undefined') ComponentToRender = App;
+      else if (typeof LandingPage !== 'undefined') ComponentToRender = LandingPage;
+      else if (typeof Main !== 'undefined') ComponentToRender = Main;
+      else if (typeof HeroSection !== 'undefined') ComponentToRender = HeroSection;
+      else if (typeof Component !== 'undefined') ComponentToRender = Component;
+      else if (typeof defaultExport !== 'undefined') ComponentToRender = defaultExport;
+      else {
+        var functionKeys = Object.keys(window).filter(function(k) {
+          return typeof window[k] === 'function' && /^[A-Z]/.test(k) && k !== 'React' && k !== 'ReactDOM' && k !== 'Babel' && k !== 'LucideIcons' && k !== 'Lucide' && k !== 'LucideReact';
+        });
+        if (functionKeys.length > 0) ComponentToRender = window[functionKeys[0]];
       }
 
-      if (RootComponent) {
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(React.createElement(RootComponent));
+      if (ComponentToRender) {
+        var root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(ComponentToRender));
       } else {
-        const possibleKeys = Object.keys(window).filter(k => 
-          typeof window[k] === 'function' && 
-          /^[A-Z]/.test(k) && 
-          k !== 'React' && 
-          k !== 'ReactDOM' && 
-          k !== 'Babel'
-        );
-        if (possibleKeys.length > 0 && typeof window[possibleKeys[0]] === 'function') {
-          const root = ReactDOM.createRoot(document.getElementById('root'));
-          root.render(React.createElement(window[possibleKeys[0]]));
-        }
+        document.getElementById('root').innerHTML = '<div style="padding: 2.5rem; text-align: center; color: #94a3b8; font-size: 0.9rem;">Menunggu komponen React...</div>';
       }
     } catch (err) {
-      const errBox = document.getElementById('error-container');
+      var errBox = document.getElementById('error-overlay');
       if (errBox) {
         errBox.style.display = 'block';
-        errBox.innerText = '⚠️ Error rendering React component:\\n' + err.message;
+        errBox.innerText = 'Babel / Execution Error: ' + (err.message || err);
       }
     }
   </script>
