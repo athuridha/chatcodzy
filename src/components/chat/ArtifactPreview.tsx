@@ -310,7 +310,10 @@ function buildRunnerDocument(rawCode: string, language: string): string {
 
   // Pure HTML Document
   if (rawCode.includes("<html") || rawCode.includes("<!DOCTYPE") || rawCode.includes("<body")) {
-    if (!rawCode.includes("cdn.tailwindcss.com")) {
+    const hasBootstrap = /bootstrap(?:\.bundle)?(?:\.min)?\.(?:css|js)/i.test(rawCode);
+    const hasTailwind = rawCode.includes("cdn.tailwindcss.com");
+
+    if (!hasTailwind && !hasBootstrap) {
       return rawCode.replace(
         "<head>",
         `<head>
@@ -322,7 +325,28 @@ function buildRunnerDocument(rawCode: string, language: string): string {
     return rawCode;
   }
 
-  // HTML Snippet -> Wrap in standard boilerplate
+  // HTML Snippet -> Check if snippet uses Bootstrap or Tailwind
+  const isBootstrapSnippet = /class=["'][^"']*\b(btn-(?:primary|secondary|success|danger|warning|info)|navbar-expand|container-fluid|col-(?:sm|md|lg)-\d+)\b/i.test(
+    rawCode
+  );
+
+  if (isBootstrapSnippet) {
+    return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>body { font-family: 'Plus Jakarta Sans', sans-serif; }</style>
+</head>
+<body class="bg-light text-dark min-vh-100">
+  ${rawCode}
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>`;
+  }
+
   return `<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -382,10 +406,15 @@ export function ArtifactPreview({
 
   const badgeLabel = useMemo(() => {
     const lang = (language || "").toLowerCase();
+    const codeLower = rawCode.toLowerCase();
     if (lang === "jsx" || lang === "tsx" || lang === "react") return "React UI Component";
     if (lang === "svg") return "Vector SVG";
-    return "HTML5 / Tailwind App";
-  }, [language]);
+    if (codeLower.includes("bootstrap")) return "Bootstrap 5 App";
+    if (codeLower.includes("tailwind") || codeLower.includes("cdn.tailwindcss.com")) return "HTML5 + Tailwind";
+    if (codeLower.includes("vue")) return "Vue App";
+    if (codeLower.includes("php")) return "PHP / HTML5 Template";
+    return "HTML5 / Web App";
+  }, [language, rawCode]);
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.preventDefault();
