@@ -197,31 +197,47 @@ function buildRunnerDocument(rawCode: string, language: string): string {
       return false;
     };
 
-    // Universal Lucide React Component Proxy
+    // Universal Lucide React Component Proxy (maps Lucide icon descriptors directly to React SVG elements)
     window.LucideIcons = new Proxy({}, {
       get: function(target, prop) {
         if (typeof prop !== 'string') return undefined;
         return function DynamicLucideIcon(props) {
           props = props || {};
-          var size = props.size || 20;
-          var className = props.className || '';
+          var size = props.size || 24;
           var color = props.color || 'currentColor';
           var strokeWidth = props.strokeWidth || 2;
-          var iconName = prop.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-          var svgHtml = '';
+          var className = props.className || '';
           
-          if (window.lucide && window.lucide.icons && window.lucide.icons[prop]) {
-            svgHtml = window.lucide.icons[prop].toSvg({ width: size, height: size, class: className, stroke: color, 'stroke-width': strokeWidth });
-          } else if (window.lucide && window.lucide.icons && window.lucide.icons[iconName]) {
-            svgHtml = window.lucide.icons[iconName].toSvg({ width: size, height: size, class: className, stroke: color, 'stroke-width': strokeWidth });
+          var iconData = (window.lucide && (window.lucide[prop] || (window.lucide.icons && window.lucide.icons[prop]))) || null;
+          
+          var children = [];
+          if (Array.isArray(iconData) && iconData.length > 0) {
+            children = iconData.map(function(item, idx) {
+              var tag = item[0];
+              var attrs = Object.assign({ key: idx }, item[1]);
+              return React.createElement(tag, attrs);
+            });
           } else {
-            svgHtml = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="' + strokeWidth + '" stroke-linecap="round" stroke-linejoin="round" class="' + className + '"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+            // Clean geometric fallback if icon name is unknown
+            children = [
+              React.createElement('circle', { key: 1, cx: '12', cy: '12', r: '9' }),
+              React.createElement('path', { key: 2, d: 'M12 8v4M12 16h.01' })
+            ];
           }
 
-          return React.createElement('span', {
-            style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
-            dangerouslySetInnerHTML: { __html: svgHtml }
-          });
+          return React.createElement('svg', {
+            xmlns: 'http://www.w3.org/2000/svg',
+            width: size,
+            height: size,
+            viewBox: '0 0 24 24',
+            fill: 'none',
+            stroke: color,
+            strokeWidth: strokeWidth,
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+            className: className,
+            style: props.style
+          }, children);
         };
       }
     });
